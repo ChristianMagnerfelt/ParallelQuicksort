@@ -15,7 +15,7 @@
 #define _REENTRANT 
 #endif
 
-#define DEBUG
+/* #define DEBUG */
 
 #include <pthread.h>
 #include <stdlib.h>
