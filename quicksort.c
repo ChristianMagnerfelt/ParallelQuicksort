@@ -4,11 +4,36 @@
 	
 	email: magnerf@kth.se
    
-	features:
+	features: 	Uses pthreads to calculate the partition of the quicksort algorithm. The number of workers are fixed 
+				and each time a parition is made the worker count is increased. When the worker count have reached its maximum no new threads are created 
+				and normal quicksort is used. 
+				
+				Summary of the algorithm:
+				
+				1 do parallelquicksort
+				2 workers left?
+				
+					Yes ->	a	partition array
+							b 	create a thread to work on the right partition
+							c	go to 1 using the left partition
+							d	join threads and return
+							
+					No -> 	a	do normal quicksort on each partition
+							b 	return
+					
+				The test values are simply one big array with random values which are lated checked with a simple for loop 
+				if they are sorted.
+				
+				There is a possiblity of false sharing along the borders of each partition however the sort cutoff should be set big enough to avoid it.
              
 	usage under Linux:
+		./Quicksort {array size } {number of workers}
 		
 	building the executable:
+		make debug
+		make release
+		
+		see makefile for more information
 	
 */
 #ifndef _REENTRANT 
@@ -24,19 +49,20 @@
 #include <time.h>
 #include <sys/time.h>
 
-#define MAX_SIZE 1000000
-#define MAX_WORKERS 1
+#define MAX_SIZE 100000000
+#define MAX_WORKERS 100
 #define MAX_PIVOTS 10
 
+/* global variables */
 struct Pivot
 {
 	int index;
 	int value;
 };
-const int g_sortCutoff = 100;
-int g_maxSize = MAX_SIZE;
-int g_arrayData[MAX_SIZE];
-int g_maxWorkers = MAX_WORKERS;
+const int g_sortCutoff = 100;	/* cut off for forcing normal quicksort execution */
+int g_maxSize;					/* size of array */
+int g_arrayData[MAX_SIZE];		
+int g_maxWorkers;				/* number of workers */
 pthread_t workers[MAX_WORKERS];
 struct WorkerData
 {
@@ -45,7 +71,7 @@ struct WorkerData
 	int n;
 	int size;
 };
-struct WorkerData g_workerData[MAX_WORKERS];
+struct WorkerData g_workerData[MAX_WORKERS];	/* contains parameter data of each worker */
 pthread_attr_t g_attr;
 
 int g_activeWorkers = 0;
@@ -54,6 +80,7 @@ pthread_mutex_t g_lock;
 double g_startTime;
 double g_finalTime;
 
+/* function prototypes */
 void initWorkerData();
 void generate(int * start, int * end);
 bool isSorted();
@@ -68,6 +95,12 @@ double readTimer();
 
 int main(int argc, const char * argv [])
 {
+	// Read command line arguments
+	g_maxSize = (argc > 1)? atoi(argv[1]) : MAX_SIZE;
+	g_maxWorkers = (argc > 2)? atoi(argv[2]) : MAX_WORKERS;
+	if(g_maxSize > MAX_SIZE) g_maxSize = MAX_SIZE;
+	if(g_maxWorkers > MAX_WORKERS) g_maxWorkers = MAX_WORKERS;
+	
 	/* Initialize worker data */
 	initWorkerData();
 	
@@ -148,6 +181,7 @@ int compare(const void * a, const void * b)
 {
   return ( *(int*)a - *(int*)b );
 }
+/* worker entry point */
 void * startThread(void * data)
 {
 	struct WorkerData * p = (struct WorkerData *) data;
@@ -158,14 +192,17 @@ void * startThread(void * data)
 	parallelQuicksort(p->start, p->n, p->size);
 	pthread_exit(0);
 }
+/* the recursive parallel quicksort function, takes an array of ints starting at the "start" pointer and contains "size" number of elements*/
 void parallelQuicksort(int * start, int n, int size)
 {
+	/* if the array contains less elements than sort cut off, use normal quicksort instead */
 	if(n < g_sortCutoff)
 	{
 		qsort(start, n, sizeof(int), compare);
 		return;
 	}
 	
+	/* lock the mutex so we can check the worker count */
 	pthread_mutex_lock(&g_lock);
 	if(g_activeWorkers < g_maxWorkers)
 	{
@@ -215,17 +252,19 @@ void parallelQuicksort(int * start, int n, int size)
 		#ifdef DEBUG
       	printf("Main: completed join with worker %ld (pthread id %lu) having a status of %ld\n", 
       		worker, workers[worker], (long)status);
-      	#endif	
+      	#endif
 	}
 	else
 	{
 		pthread_mutex_unlock(&g_lock);
+		/* no available threads, do normal quicksort */
 		qsort(start, n, sizeof(int), compare);
 	}
 }
+/* select MAX_PIVOTS number of random pivots and choose one of them */
 int getPivot(int * start, int n)
 {
-	/* select MAX_PIVOTS number of random pivots and choose one of them */
+	/* if n is low skip selecting pivots */
 	if(n < 2)
 		return 0;
 	struct Pivot pivots[MAX_PIVOTS];
@@ -238,6 +277,7 @@ int getPivot(int * start, int n)
 		pivots[i].value = start[index];
 	}
 
+	/* sort the pivots */
 	qsort(&pivots[0], maxPivots, sizeof(struct Pivot), comparePivot);
 
 	int pivot = pivots[maxPivots / 2].index;
@@ -248,16 +288,19 @@ int getPivot(int * start, int n)
 	return pivot;
 	
 }
+/* compare function that sorts values in increasing order */
 int comparePivot(const void * a, const void * b)
 {
   return (((struct Pivot*)a)->value - ((struct Pivot*)b)->value);
 }
+/* swaps to integers in place by reference */
 void swap(int * a, int * b)
 {
 	int tmp = *a;
 	*a = *b;
 	*b = tmp;
 }
+/* prints array from start to end */
 void printArray(int * start, int * end)
 {
 	if(start == end)
