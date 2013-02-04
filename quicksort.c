@@ -3,15 +3,18 @@
 	author: Christian Magnerfelt
 	
 	email: magnerf@kth.se
+	
+	date: 2012.02.04
    
-	features: 	Uses pthreads to calculate the partition of the quicksort algorithm. The number of workers are fixed 
-				and each time a parition is made the worker count is increased. When the worker count have reached its maximum no new threads are created 
-				and normal quicksort is used. 
+	features: 	Uses pthreads to calculate the partition of the quicksort algorithm. The maximum amount of workers are limited 
+				by maxWorkers which can be supplied by a command line argument. If the argument is 0 only the main thread will run.
+				The number of "real" workers are fixed by depth which mean they are of a power of two. This guarantes that all threads perform roughly 
+				the same amount of work.
 				
 				Summary of the algorithm:
 				
 				1 do parallelquicksort
-				2 workers left?
+				2 current depth less than max depth?
 				
 					Yes ->	a	partition array
 							b 	create a thread to work on the right partition
@@ -30,17 +33,25 @@
 		./Quicksort {array size } {number of workers}
 		
 	building the executable:
-		make debug
+		make debug 
 		make release
 		
-		see makefile for more information
+		see makefile for more information about flags
+		
+	Swithing version
+		The ealier tested version only fixed the workers by a given number which is used for comparision.
+		To switch to this version you need to have git installed.
+		The pervious version is located on the main branch which can be reached with the command:
+			git checkout master
+		To return to the dixed by depth version use the command:
+			git checkout depth
 	
 */
 #ifndef _REENTRANT 
 #define _REENTRANT 
 #endif
 
-#define DEBUG
+/* #define DEBUG */
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -274,7 +285,7 @@ void parallelQuicksort(int * start, int n, int size, int depth)
       	#endif
 	}
 	else
-	{
+	{	
 		/* no available threads, do normal quicksort */
 		qsort(start, n, sizeof(int), compare);
 	}

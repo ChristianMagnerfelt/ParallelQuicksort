@@ -1,9 +1,15 @@
 Author: Christian Magnerfelt Email: magnerf@kth.se
 
+Two implementations were tested. The first creates a fixed number of workers depending on what branch that request a 
+thread for a parition to sort. The later limits the number of threads for each depth in the recursion resulting in that the number of worker threads are
+of the power of two.
+
+FIXED NUMBER OF WORKER THREADS
+
 HARDWARE = Intel Core i7-2600 3,40 GHz ( 8 HW THREADS )
 OS = UBUNTU 64
 
-1 : sorting 100 000 000 integers
+Sorting 100 000 000 integers
 
 Number of Threads ( including main thread ):
 1 : 11.4829 s
@@ -30,5 +36,25 @@ thread creation takes time the left tree will have more threads compared to the 
 to a depth or having a pool of threads where each branch waits for a thread to finish.
 
 
+WORKER THREADS LIMITED BY DEPTH
 
+HARDWARE = Intel Core i7-2600 3,40 GHz ( 8 HW THREADS )
+OS = UBUNTU 64
 
+Sorting 100 000 000 integers
+
+Number of Threads ( including main thread ):
+
+1 : 11.625 s
+2 : 10.2993 s
+4 : 5.08549 s
+8 : 4.05889 s
+16 : 3.01693 s
+32 : 2.62423 s
+63 : 2.54307 s
+
+Disscusion:
+It shows clearly by limiting the number of worker threads for each level in the recursion balance 
+the workload as each thread will sort the equal amount of data in the array. It's intressting to note that more threads 
+descrease the calculation time which means that the first implementation does indeed not sheadule the work for all cores while the seconds does.
+The optimal number of threads should be 8 if they are all running on a separate core.
