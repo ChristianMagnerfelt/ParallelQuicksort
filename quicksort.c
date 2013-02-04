@@ -40,7 +40,7 @@
 #define _REENTRANT 
 #endif
 
-/* #define DEBUG */
+#define DEBUG
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -48,6 +48,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <sys/time.h>
+#include <math.h>
 
 #define MAX_SIZE 100000000
 #define MAX_WORKERS 100
@@ -70,10 +71,12 @@ struct WorkerData
 	int * start;
 	int n;
 	int size;
+	int depth;
 };
 struct WorkerData g_workerData[MAX_WORKERS];	/* contains parameter data of each worker */
 pthread_attr_t g_attr;
 
+int g_maxDepth;
 int g_activeWorkers = 0;
 pthread_mutex_t g_lock;
 
@@ -86,7 +89,7 @@ void generate(int * start, int * end);
 bool isSorted();
 int compare(const void * a, const void * b);
 void * startThread(void * data);
-void parallelQuicksort(int * start, int n, int size);
+void parallelQuicksort(int * start, int n, int size, int depth);
 int getPivot(int * start, int n);
 int comparePivot(const void * a, const void * b);
 void swap(int * a, int * b);
@@ -101,8 +104,19 @@ int main(int argc, const char * argv [])
 	if(g_maxSize > MAX_SIZE) g_maxSize = MAX_SIZE;
 	if(g_maxWorkers > MAX_WORKERS) g_maxWorkers = MAX_WORKERS;
 	
+	
 	/* Initialize worker data */
 	initWorkerData();
+	
+	/* Calculate maximum depth for parallel quicksort */
+	if(g_maxWorkers < 1) g_maxDepth = -1;
+	else
+	{
+		g_maxDepth = (int)(log10((float)(g_maxWorkers + 2)) / log10(2.0f));
+	}
+	#ifdef DEBUG
+	printf("max depth is %d\n", g_maxDepth);
+	#endif
 	
 	/* Generate test data */
 	generate(&g_arrayData[0], &g_arrayData[g_maxSize]);
@@ -119,7 +133,7 @@ int main(int argc, const char * argv [])
 	g_startTime = readTimer();
 	
 	/* Start the recursive parallel quick sort */
-	parallelQuicksort(&g_arrayData[0], g_maxSize, sizeof(int));
+	parallelQuicksort(&g_arrayData[0], g_maxSize, sizeof(int), 0);
 	
 	/* Set end time */
 	g_finalTime = readTimer() - g_startTime;
@@ -152,6 +166,7 @@ void initWorkerData()
 		g_workerData[i].start = 0;
 		g_workerData[i].n = 0;
 		g_workerData[i].size = 0;
+		g_workerData[i].depth = 0;
 	}
 }
 void generate(int * start, int * end)
@@ -188,12 +203,13 @@ void * startThread(void * data)
 	int id = p->id;
 	#ifdef DEBUG
 	printf("worker %d (pthread id %lu) has started\n", id, pthread_self());
+	printf("current depth is %d\n", p->depth);
 	#endif
-	parallelQuicksort(p->start, p->n, p->size);
+	parallelQuicksort(p->start, p->n, p->size, p->depth);
 	pthread_exit(0);
 }
 /* the recursive parallel quicksort function, takes an array of ints starting at the "start" pointer and contains "size" number of elements*/
-void parallelQuicksort(int * start, int n, int size)
+void parallelQuicksort(int * start, int n, int size, int depth)
 {
 	/* if the array contains less elements than sort cut off, use normal quicksort instead */
 	if(n < g_sortCutoff)
@@ -202,10 +218,12 @@ void parallelQuicksort(int * start, int n, int size)
 		return;
 	}
 	
-	/* lock the mutex so we can check the worker count */
-	pthread_mutex_lock(&g_lock);
-	if(g_activeWorkers < g_maxWorkers)
+
+	if(depth < g_maxDepth)
 	{
+		/* lock the mutex so we can check the worker count */
+		pthread_mutex_lock(&g_lock);
+		
 		/* get worker id from counter */
 		pthread_t worker = g_activeWorkers;
 		g_activeWorkers++;
@@ -234,12 +252,13 @@ void parallelQuicksort(int * start, int n, int size)
 		g_workerData[worker].start = start + pivotIndex;
 		g_workerData[worker].n = n - pivotIndex;
 		g_workerData[worker].size = size;
+		g_workerData[worker].depth = depth + 1;
 		
 		/* Create a sepparate thread to work on one of the sub arrays */
 		pthread_create(&workers[worker], &g_attr, startThread, (void *) &g_workerData[worker]);
 		
 		/* Let this thread work on another sub array */
-		parallelQuicksort(start, pivotIndex, size);
+		parallelQuicksort(start, pivotIndex, size, depth + 1);
 		
 		/* join and wait for other thread to finish */
 		void * status;
@@ -256,7 +275,6 @@ void parallelQuicksort(int * start, int n, int size)
 	}
 	else
 	{
-		pthread_mutex_unlock(&g_lock);
 		/* no available threads, do normal quicksort */
 		qsort(start, n, sizeof(int), compare);
 	}
